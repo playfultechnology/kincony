@@ -1,7 +1,7 @@
 /**
- * Kincony KC868-A4
+ * Kincony KC868-A8
  *
- * https://www.kincony.com/arduino-esp32-4-channel-relay-module.html
+ * https://www.kincony.com/how-to-programming.html
  * See https://www.kincony.com/how-to-code-by-arduino-ide.html
  * Set Target board as NodeMCU-32S
  */
@@ -11,6 +11,8 @@
 #include "src/Button2/Button2.h";
 // See https://github.com/Arduino-IRremote/Arduino-IRremote
 #include "src/Arduino-IRremote/IRremote.hpp";
+// https://github.com/xreef/PCF8574_library
+#include "PCF8574.h"
 
 // CONSTANTS
 // Relay Outputs
@@ -35,6 +37,7 @@ const byte s2buttonPin = 0;
 Button2 inputButtons[4];
 // S2 Button
 Button2 s2button;
+PCF8574 pcf(0x24);
 
 // CALLBACKS
 void onPress(Button2& btn) {
@@ -73,13 +76,24 @@ void setup() {
   }
 
   Serial.println(F("Testing Relays"));
-  for(int i=0; i<4; i++){
-    pinMode(relayPins[i], OUTPUT);
-    digitalWrite(relayPins[i], HIGH);
+  pcf.pinMode(P0, OUTPUT);
+  pcf.pinMode(P1, OUTPUT);
+  pcf.pinMode(P2, OUTPUT);
+  pcf.pinMode(P3, OUTPUT);
+  pcf.pinMode(P4, OUTPUT);
+  pcf.pinMode(P5, OUTPUT);
+  pcf.pinMode(P6, OUTPUT);
+  pcf.pinMode(P7, OUTPUT);
+  if (pcf.begin()){Serial.println(F("Ok"));}
+  else {Serial.println(F("Error"));}
+
+  for(int i=0; i<8; i++){
+    pcf.pinMode(i, OUTPUT);
+    pcf.digitalWrite(i, HIGH);
     delay(250);
   }
-  for(int i=0; i<4; i++){
-    digitalWrite(relayPins[i], LOW);
+  for(int i=0; i<8; i++){
+    pcf.digitalWrite(i, LOW);
     delay(250);
   }
 
