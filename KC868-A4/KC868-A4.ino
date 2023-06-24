@@ -37,7 +37,6 @@ const byte s2buttonPin = 0;
 Button2 inputButtons[4];
 // S2 Button
 Button2 s2button;
-PCF8574 pcf(0x24);
 
 // CALLBACKS
 void onPress(Button2& btn) {
@@ -76,41 +75,38 @@ void setup() {
   }
 
   Serial.println(F("Testing Relays"));
-  pcf.pinMode(P0, OUTPUT);
-  pcf.pinMode(P1, OUTPUT);
-  pcf.pinMode(P2, OUTPUT);
-  pcf.pinMode(P3, OUTPUT);
-  pcf.pinMode(P4, OUTPUT);
-  pcf.pinMode(P5, OUTPUT);
-  pcf.pinMode(P6, OUTPUT);
-  pcf.pinMode(P7, OUTPUT);
-  if (pcf.begin()){Serial.println(F("Ok"));}
-  else {Serial.println(F("Error"));}
-
-  for(int i=0; i<8; i++){
-    pcf.pinMode(i, OUTPUT);
-    pcf.digitalWrite(i, HIGH);
+  for(int i=0; i<4; i++){
+    pinMode(relayPins[i], OUTPUT);
+    digitalWrite(relayPins[i], HIGH);
     delay(250);
   }
-  for(int i=0; i<8; i++){
-    pcf.digitalWrite(i, LOW);
+  for(int i=0; i<4; i++){
+    digitalWrite(relayPins[i], LOW);
     delay(250);
   }
 
 
   Serial.println(F("Testing DAC outputs"));
-  // Write 5V to DAC pins
-  int value = 127;  // 255 = 10V
   for(int i=0; i<2; i++){
     pinMode(dac10VPins[i], OUTPUT);
-    dacWrite(dac10VPins[i], value);
-    delay(1000);
-    dacWrite(dac10VPins[i], 0);
+  }
+  // Write to DAC pins
+  int maxVal = 255; //255 = 10V
+  for(int val=0; val<maxVal; val++){
+    for(int i=0; i<2; i++){dacWrite(dac10VPins[i], val); }
+    val++;
+    delay(10);
+  }
+  for(int val=maxVal; val>0; val--){
+    for(int i=0; i<2; i++){dacWrite(dac10VPins[i], val); }
+    val--;
+    delay(10);
   }
 
 
-  Serial.println(F("Testing Buzzer"));  
-  pinMode(buzzerPin, OUTPUT);
+  Serial.println(F("Testing Buzzer"));
+  // See https://espressif-docs.readthedocs-hosted.com/projects/arduino-esp32/en/latest/api/ledc.html
+  ledcSetup(TONE_PWM_CHANNEL, 5000, 12);
   ledcAttachPin(buzzerPin, TONE_PWM_CHANNEL);
   ledcWriteNote(TONE_PWM_CHANNEL, NOTE_C, 4); 
   delay(50);
