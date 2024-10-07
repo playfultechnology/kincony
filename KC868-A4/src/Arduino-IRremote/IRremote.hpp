@@ -13,7 +13,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2015-2022 Ken Shirriff http://www.righto.com, Rafi Khan, Armin Joachimsmeyer
+ * Copyright (c) 2015-2023 Ken Shirriff http://www.righto.com, Rafi Khan, Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,7 +49,7 @@
  * - SEND_PWM_BY_TIMER                  Disable carrier PWM generation in software and use (restricted) hardware PWM.
  * - USE_NO_SEND_PWM                    Use no carrier PWM, just simulate an **active low** receiver signal. Overrides SEND_PWM_BY_TIMER definition.
  * - USE_OPEN_DRAIN_OUTPUT_FOR_SEND_PIN Use or simulate open drain output mode at send pin. Attention, active state of open drain is LOW, so connect the send LED between positive supply and send pin!
- * - EXCLUDE_EXOTIC_PROTOCOLS           If activated, BANG_OLUFSEN, BOSEWAVE, WHYNTER and LEGO_PF are excluded in decode() and in sending with IrSender.write().
+ * - EXCLUDE_EXOTIC_PROTOCOLS           If activated, BANG_OLUFSEN, BOSEWAVE, WHYNTER, FAST and LEGO_PF are excluded in decode() and in sending with IrSender.write().
  * - EXCLUDE_UNIVERSAL_PROTOCOLS        If activated, the universal decoder for pulse distance protocols and decodeHash (special decoder for all protocols) are excluded in decode().
  * - DECODE_*                           Selection of individual protocols to be decoded. See below.
  * - MARK_EXCESS_MICROS                 Value is subtracted from all marks and added to all spaces before decoding, to compensate for the signal forming of different IR receiver modules.
@@ -65,23 +65,13 @@
 #ifndef _IR_REMOTE_HPP
 #define _IR_REMOTE_HPP
 
-#define VERSION_IRREMOTE "4.0.0"
-#define VERSION_IRREMOTE_MAJOR 4
-#define VERSION_IRREMOTE_MINOR 0
-#define VERSION_IRREMOTE_PATCH 0
-
-/*
- * Macro to convert 3 version parts into an integer
- * To be used in preprocessor comparisons, such as #if VERSION_IRREMOTE_HEX >= VERSION_HEX_VALUE(3, 7, 0)
- */
-#define VERSION_HEX_VALUE(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
-#define VERSION_IRREMOTE_HEX  VERSION_HEX_VALUE(VERSION_IRREMOTE_MAJOR, VERSION_IRREMOTE_MINOR, VERSION_IRREMOTE_PATCH)
+#include "IRVersion.h"
 
 // activate it for all cores that does not use the -flto flag, if you get false error messages regarding begin() during compilation.
 //#define SUPPRESS_ERROR_MESSAGE_FOR_BEGIN
 
 /*
- * If activated, BANG_OLUFSEN, BOSEWAVE, MAGIQUEST,WHYNTER and LEGO_PF are excluded in decoding and in sending with IrSender.write
+ * If activated, BANG_OLUFSEN, BOSEWAVE, MAGIQUEST, WHYNTER, FAST and LEGO_PF are excluded in decoding and in sending with IrSender.write
  */
 //#define EXCLUDE_EXOTIC_PROTOCOLS
 /****************************************************
@@ -96,10 +86,10 @@
 
 #if !defined(NO_DECODER) // for sending raw only
 #  if (!(defined(DECODE_DENON) || defined(DECODE_JVC) || defined(DECODE_KASEIKYO) \
-|| defined(DECODE_PANASONIC) || defined(DECODE_LG) || defined(DECODE_NEC) || defined(DECODE_SAMSUNG) \
+|| defined(DECODE_PANASONIC) || defined(DECODE_LG) || defined(DECODE_NEC) || defined(DECODE_ONKYO) || defined(DECODE_SAMSUNG) \
 || defined(DECODE_SONY) || defined(DECODE_RC5) || defined(DECODE_RC6) \
 || defined(DECODE_DISTANCE_WIDTH) || defined(DECODE_HASH) || defined(DECODE_BOSEWAVE) \
-|| defined(DECODE_LEGO_PF) || defined(DECODE_MAGIQUEST) || defined(DECODE_WHYNTER)))
+|| defined(DECODE_LEGO_PF) || defined(DECODE_MAGIQUEST) || defined(DECODE_FAST) || defined(DECODE_WHYNTER)))
 /*
  * If no protocol is explicitly enabled, we enable all protocols
  */
@@ -117,8 +107,9 @@
 #    if !defined(EXCLUDE_EXOTIC_PROTOCOLS) // saves around 2000 bytes program memory
 #define DECODE_BOSEWAVE
 #define DECODE_LEGO_PF
-#define DECODE_MAGIQUEST // It modifies the RAW_BUFFER_LENGTH from 100 to 112
+#define DECODE_MAGIQUEST
 #define DECODE_WHYNTER
+#define DECODE_FAST
 #    endif
 
 #    if !defined(EXCLUDE_UNIVERSAL_PROTOCOLS)
@@ -166,19 +157,20 @@
  * Keep in mind, that this is the delay between the end of the received command and the start of decoding.
  */
 #if !defined(RECORD_GAP_MICROS)
-// To change this value, you simply can add a line #define "RECORD_GAP_MICROS <My_new_value>" in your ino file before the line "#include <IRremote.hpp>"
-#define RECORD_GAP_MICROS   5000 // FREDRICH28AC / LG2 header space is 9700, NEC header space is 4500
+// To change this value, you simply can add a line #define "RECORD_GAP_MICROS <My_new_value>" in your *.ino file before the line "#include <IRremote.hpp>"
+// Maximum value for RECORD_GAP_MICROS, which fit into 8 bit buffer, using 50 us as tick, is 12750
+#define RECORD_GAP_MICROS   8000 // RECS80 (https://www.mikrocontroller.net/articles/IRMP#RECS80) 1 bit space is 7500µs , NEC header space is 4500
 #endif
 /**
  * Threshold for warnings at printIRResult*() to report about changing the RECORD_GAP_MICROS value to a higher value.
  */
 #if !defined(RECORD_GAP_MICROS_WARNING_THRESHOLD)
-// To change this value, you simply can add a line #define "RECORD_GAP_MICROS_WARNING_THRESHOLD <My_new_value>" in your ino file before the line "#include <IRremote.hpp>"
+// To change this value, you simply can add a line #define "RECORD_GAP_MICROS_WARNING_THRESHOLD <My_new_value>" in your *.ino file before the line "#include <IRremote.hpp>"
 #define RECORD_GAP_MICROS_WARNING_THRESHOLD   15000
 #endif
 
 /** Minimum gap between IR transmissions, in MICROS_PER_TICK */
-#define RECORD_GAP_TICKS    (RECORD_GAP_MICROS / MICROS_PER_TICK) // 100
+#define RECORD_GAP_TICKS    (RECORD_GAP_MICROS / MICROS_PER_TICK)
 
 /*
  * Activate this line if your receiver has an external output driver transistor / "inverted" output
@@ -201,7 +193,7 @@
 #if (defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(PARTICLE)) || defined(ARDUINO_ARCH_MBED)
 #  if !defined(SEND_PWM_BY_TIMER)
 #define SEND_PWM_BY_TIMER       // the best and default method for ESP32 etc.
-#warning INFO: For ESP32, RP2040, mbed and particle boards SEND_PWM_BY_TIMER is enabled by default. If this is not intended, deactivate the line in IRremote.hpp over this warning message in file IRremote.hpp.
+#warning INFO: For ESP32, RP2040, mbed and particle boards SEND_PWM_BY_TIMER is enabled by default, since we have the resources and timing is more exact than the software generated one. If this is not intended, deactivate the line in IRremote.hpp over this warning message in file IRremote.hpp.
 #  endif
 #else
 #  if defined(SEND_PWM_BY_TIMER)
@@ -255,7 +247,7 @@
  * microseconds per clock interrupt tick
  */
 #if ! defined(MICROS_PER_TICK)
-#define MICROS_PER_TICK    50
+#define MICROS_PER_TICK    50L // must be with L to get 32 bit results if multiplied with rawbuf[] content.
 #endif
 
 #define MILLIS_IN_ONE_SECOND 1000L
@@ -280,6 +272,8 @@
 #warning INFO: No definition for LED_BUILTIN found -> default LED feedback is disabled.
 #    endif
 #include "IRFeedbackLED.hpp"
+#  else
+void disableLEDFeedback() {}; // dummy function for examples
 #  endif
 
 #include "LongUnion.h" // used in most decoders
@@ -308,12 +302,12 @@
 #include "ir_RC5_RC6.hpp"
 #include "ir_Samsung.hpp"
 #include "ir_Sony.hpp"
+#include "ir_FAST.hpp"
 #include "ir_Others.hpp"
 #include "ir_Pronto.hpp" // pronto is an universal decoder and encoder
 #  if defined(DECODE_DISTANCE_WIDTH)     // universal decoder for pulse distance width protocols - requires up to 750 bytes additional program memory
 #include "ir_DistanceWidthProtocol.hpp"
 #  endif
-
 #endif // #if !defined(USE_IRREMOTE_HPP_AS_PLAIN_INCLUDE)
 
 /**

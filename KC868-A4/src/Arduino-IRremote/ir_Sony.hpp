@@ -52,14 +52,18 @@
  // 7 command bits
  +1300,- 450 +1350,- 450 +1300,- 450 + 700,- 450
  + 700,- 450 + 750,- 450 + 700,- 400
-// (5,8,) 13 address bits
+ // (5,8,) 13 address bits and NO stop bit!
  +1300,- 500
  + 700,- 450 + 700,- 450 +1300,- 500 +1300,- 450
  +1300,- 450 + 700,- 450 +1350,- 400 + 750,- 450
  + 700,- 450 +1300,- 450 + 700,- 450 + 700
  Sum: 31100
  */
+/*
+ * Sony is the only protocol using the pulse width encoding, which requires no stop bit
+ */
 // see https://www.sbprojects.net/knowledge/ir/sirc.php
+// https://www.mikrocontroller.net/articles/IRMP_-_english#SIRCS
 // Frames are repeated every 45ms (measured from start to start) for as long as the key on the remote control is held down.
 // This leads to a 15 ms gap for a Sony20 protocol!
 // Here http://picprojects.org.uk/projects/sirc/ it is claimed, that many Sony remotes send each frame a minimum of 3 times. But 1 repeat (2 sends) has also been seen in real life.
@@ -86,12 +90,8 @@
 #define SONY_REPEAT_PERIOD          45000 // Commands are repeated every 45 ms (measured from start to start) for as long as the key on the remote control is held down.
 #define SONY_MAXIMUM_REPEAT_DISTANCE    (SONY_REPEAT_PERIOD - SONY_AVERAGE_DURATION_MIN) // 24 ms
 
-#define SIRCS_12_PROTOCOL       12
-#define SIRCS_15_PROTOCOL       15
-#define SIRCS_20_PROTOCOL       20
-
 struct PulseDistanceWidthProtocolConstants SonyProtocolConstants = { SONY, SONY_KHZ, SONY_HEADER_MARK, SONY_SPACE, SONY_ONE_MARK,
-SONY_SPACE, SONY_ZERO_MARK, SONY_SPACE, PROTOCOL_IS_LSB_FIRST, SEND_NO_STOP_BIT, (SONY_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), NULL };
+SONY_SPACE, SONY_ZERO_MARK, SONY_SPACE, PROTOCOL_IS_LSB_FIRST, (SONY_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), NULL };
 
 /************************************
  * Start of send and decode functions
@@ -113,16 +113,16 @@ bool IRrecv::decodeSony() {
     }
 
     // Check we have enough data. +2 for initial gap and start bit mark and space minus the last/MSB space. NO stop bit! 26, 32, 42
-    if (decodedIRData.rawDataPtr->rawlen != (2 * SONY_BITS_MIN) + 2 && decodedIRData.rawDataPtr->rawlen != (2 * SONY_BITS_MAX) + 2
-            && decodedIRData.rawDataPtr->rawlen != (2 * SONY_BITS_15) + 2) {
+    if (decodedIRData.rawlen != (2 * SONY_BITS_MIN) + 2 && decodedIRData.rawlen != (2 * SONY_BITS_MAX) + 2
+            && decodedIRData.rawlen != (2 * SONY_BITS_15) + 2) {
         IR_DEBUG_PRINT(F("Sony: "));
         IR_DEBUG_PRINT(F("Data length="));
-        IR_DEBUG_PRINT(decodedIRData.rawDataPtr->rawlen);
+        IR_DEBUG_PRINT(decodedIRData.rawlen);
         IR_DEBUG_PRINTLN(F(" is not 12, 15 or 20"));
         return false;
     }
 
-    if (!decodePulseDistanceWidthData(&SonyProtocolConstants, (decodedIRData.rawDataPtr->rawlen - 1) / 2, 3)) {
+    if (!decodePulseDistanceWidthData(&SonyProtocolConstants, (decodedIRData.rawlen - 1) / 2, 3)) {
 #if defined(LOCAL_DEBUG)
         Serial.print(F("Sony: "));
         Serial.println(F("Decode failed"));
@@ -134,7 +134,7 @@ bool IRrecv::decodeSony() {
 //    decodedIRData.flags = IRDATA_FLAGS_IS_LSB_FIRST; // Not required, since this is the start value
     decodedIRData.command = decodedIRData.decodedRawData & 0x7F;  // first 7 bits
     decodedIRData.address = decodedIRData.decodedRawData >> 7;    // next 5 or 8 or 13 bits
-    decodedIRData.numberOfBits = (decodedIRData.rawDataPtr->rawlen - 1) / 2;
+    decodedIRData.numberOfBits = (decodedIRData.rawlen - 1) / 2;
     decodedIRData.protocol = SONY;
 
     //Check for repeat
@@ -213,7 +213,7 @@ bool IRrecv::decodeSonyMSB(decode_results *aResults) {
 /**
  * Old version with MSB first data
  */
-void IRsend::sendSony(unsigned long data, int nbits) {
+void IRsend::sendSonyMSB(unsigned long data, int nbits) {
     // Set IR carrier frequency
     enableIROut (SONY_KHZ);
 
@@ -222,11 +222,10 @@ void IRsend::sendSony(unsigned long data, int nbits) {
     space(SONY_SPACE);
 
     // Old version with MSB first Data
-    sendPulseDistanceWidthData(SONY_ONE_MARK, SONY_SPACE, SONY_ZERO_MARK, SONY_SPACE, data, nbits, PROTOCOL_IS_MSB_FIRST,
-            SEND_NO_STOP_BIT);
-#if !defined(DISABLE_CODE_FOR_RECEIVER)
-    IrReceiver.restartAfterSend();
-#endif
+    sendPulseDistanceWidthData(SONY_ONE_MARK, SONY_SPACE, SONY_ZERO_MARK, SONY_SPACE, data, nbits, PROTOCOL_IS_MSB_FIRST);
+}
+void IRsend::sendSony(unsigned long data, int nbits) {
+    sendSonyMSB(data, nbits);
 }
 
 /** @}*/

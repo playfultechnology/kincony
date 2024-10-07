@@ -11,7 +11,7 @@
  *************************************************************************************
  * MIT License
  *
- * Copyright (c) 2021-2022 Armin Joachimsmeyer
+ * Copyright (c) 2021-2023 Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,20 +44,23 @@
 /*
  * Functions declared here
  */
-void timerResetInterruptPending();
-void timerEnableReceiveInterrupt();
-void timerDisableReceiveInterrupt();
-void timerConfigForReceive();
-void enableSendPWMByTimer();
-void disableSendPWMByTimer();
-void timerConfigForSend(uint8_t aFrequencyKHz);
+void timerConfigForReceive();           // Initialization of 50 us timer, interrupts are still disabled
+void timerEnableReceiveInterrupt();     // Enable interrupts of an initialized timer
+void timerDisableReceiveInterrupt();    // Disable interrupts of an initialized timer
+void timerResetInterruptPending();      // ISR helper function for some architectures, which require a manual reset
+                                        // of the pending interrupt (TIMER_REQUIRES_RESET_INTR_PENDING is defined). Otherwise empty.
 
-#if defined(SEND_PWM_BY_TIMER) && ( (defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(PARTICLE)) || defined(ARDUINO_ARCH_MBED) )
-#define SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER // Receive timer and send generation are independent, so it is recommended to always define SEND_PWM_BY_TIMER
+void timerConfigForSend(uint16_t aFrequencyKHz); // Initialization of timer hardware generated PWM, if defined(SEND_PWM_BY_TIMER)
+void enableSendPWMByTimer();            // Switch on PWM generation
+void disableSendPWMByTimer();           // Switch off PWM generation
+
+// SEND_PWM_BY_TIMER for different architectures is enabled / defined at IRremote.hpp line 195.
+#if  defined(SEND_PWM_BY_TIMER) && ( (defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(PARTICLE)) || defined(ARDUINO_ARCH_MBED) )
+#define SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER // Receive timer and send generation timer are independent here.
 #endif
 
-#if defined(IR_SEND_PIN) && defined(SEND_PWM_BY_TIMER) && !defined(SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER) // For e.g ESP32 IR_SEND_PIN definition is useful
-#undef IR_SEND_PIN // avoid warning below, user warning is done at IRremote.hpp
+#if defined(IR_SEND_PIN) && defined(SEND_PWM_BY_TIMER) && !defined(SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER) // For ESP32 etc. IR_SEND_PIN definition is useful
+#undef IR_SEND_PIN // To avoid "warning: "IR_SEND_PIN" redefined". The user warning is done at IRremote.hpp line 202.
 #endif
 
 // Macros for enabling timers for development
@@ -85,6 +88,7 @@ void timerConfigForSend(uint8_t aFrequencyKHz);
 //#define __STM32F1__
 //#define STM32F1xx
 //#define PARTICLE
+//#define ARDUINO_ARCH_RENESAS
 
 #if defined (DOXYGEN)
 /**
@@ -122,7 +126,7 @@ void timerDisableReceiveInterrupt() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut().
  * @param aFrequencyKHz     Frequency of the sent PWM signal in kHz. There is no practical reason to have a sub kHz resolution for sending frequency :-).
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 }
 
 /**
@@ -179,11 +183,11 @@ void disableSendPWMByTimer() {
 
 #elif defined(__AVR_ATtiny816__) || defined(__AVR_ATtiny1614__) || defined(__AVR_ATtiny1616__) || defined(__AVR_ATtiny3216__) || defined(__AVR_ATtiny3217__) // e.g. TinyCore boards
 #  if !defined(IR_USE_AVR_TIMER_A) && !defined(IR_USE_AVR_TIMER_D)
-#define IR_USE_AVR_TIMER_A // use this if you use MegaTinyCore, Tone is on TCB and millis() on TCD
+#define IR_USE_AVR_TIMER_A // use this if you use megaTinyCore, Tone is on TCB and millis() on TCD
 //#define IR_USE_AVR_TIMER_D // use this if you use TinyCore
 #  endif
 
-// ATmega8u2, ATmega16U2, ATmega32U2
+// ATmega8u2, ATmega16U2, ATmega32U2, ATmega8 - Timer 2 does not work with existing code below
 #elif defined(__AVR_ATmega8U2__) || defined(__AVR_ATmega16U2__)  || defined(__AVR_ATmega32U2__) || defined(__AVR_ATmega8__)
 #  if !defined(IR_USE_AVR_TIMER1)
 #define IR_USE_AVR_TIMER1     // send pin = pin C6
@@ -407,7 +411,8 @@ void disableSendPWMByTimer() {
 #    else
 #      if defined(USE_TIMER_CHANNEL_B)
 void enableSendPWMByTimer() {
-    TCNT1 = 0; (TCCR1A |= _BV(COM1B1))  // Clear OC1A/OC1B on Compare Match when up-counting. Set OC1A/OC1B on Compare Match when downcounting.
+    TCNT1 = 0;
+    TCCR1A |= _BV(COM1B1);  // Clear OC1A/OC1B on Compare Match when up-counting. Set OC1A/OC1B on Compare Match when counting down.
 }
 void disableSendPWMByTimer() {
     TCCR1A &= ~(_BV(COM1B1));
@@ -427,7 +432,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 
 #  if (((F_CPU / 2000) / 38) < 256)
@@ -457,7 +462,7 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
 #  endif // defined(SEND_PWM_BY_TIMER)
 
 /*
- * AVR Timer2 (8 bits) // Tone timer on UNO
+ * AVR Timer2 (8 bits) // Tone timer on Uno
  */
 #elif defined(IR_USE_AVR_TIMER2)
 
@@ -517,14 +522,19 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 
 #  if (((F_CPU / 2000) / 38) < 256)
-    const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of Phase Correct PWM
+    /*
+     * tPWMWrapValue is 210.52 for 38 kHz, 17.58 for 455 kHz @16 MHz clock.
+     * 210 -> 38.095 kHz, 17 -> 470.588 kHz @16 MHz clock.
+     * We use 2000 instead of 1000 in the formula, because of Phase Correct PWM.
+     */
+    const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz);
     TCCR2A = _BV(WGM20); // PWM, Phase Correct, Top is OCR2A
     TCCR2B = _BV(WGM22) | _BV(CS20); // CS20 -> no prescaling
-    OCR2A = tPWMWrapValue - 1; // The top value for the timer.  The modulation frequency will be F_CPU / 2 / OCR2A.
+    OCR2A = tPWMWrapValue - 1; // The top value for the timer.  The modulation frequency will be F_CPU / 2 / (OCR2A + 1).
     OCR2B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT2 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
 #  else
@@ -586,7 +596,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
 #error "Creating timer PWM with timer 3 is not supported for F_CPU > 16 MHz"
 #endif
@@ -637,7 +647,7 @@ void disableSendPWMByTimer() {
     TCCR4A &= ~(_BV(COM4A1));
 }
 
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
 #error "Creating timer PWM with timer 4 is not supported for F_CPU > 16 MHz"
 #endif
@@ -688,8 +698,13 @@ void timerConfigForReceive() {
 #    endif
 
 #    if defined(ARDUINO_AVR_PROMICRO) // Sparkfun Pro Micro
-void enableSendPWMByTimer() {    TCNT4 = 0; (TCCR4A |= _BV(COM4A0))     // Use complementary OC4A output on pin 5
-void disableSendPWMByTimer() {   (TCCR4A &= ~(_BV(COM4A0)))  // (Pro Micro does not map PC7 (32/ICP3/CLK0/OC4A)
+void enableSendPWMByTimer() {
+    TCNT4 = 0;
+    TCCR4A |= _BV(COM4A0);     // Use complementary OC4A output on pin 5
+}
+void disableSendPWMByTimer() {
+    TCCR4A &= ~(_BV(COM4A0));  // (Pro Micro does not map PC7 (32/ICP3/CLK0/OC4A)
+}
 // of ATmega32U4 )
 #    else
 void enableSendPWMByTimer() {
@@ -706,7 +721,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
 #error "Creating timer PWM with timer 4 HS is not supported for F_CPU > 16 MHz"
 #endif
@@ -767,7 +782,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
 #error "Creating timer PWM with timer 5 is not supported for F_CPU > 16 MHz"
 #endif
@@ -826,7 +841,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
 #error "Creating timer PWM with timer TINY0 is not supported for F_CPU > 16 MHz"
 #endif
@@ -885,7 +900,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 
 #  if (((F_CPU / 1000) / 38) < 256)
@@ -981,7 +996,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #if F_CPU > 16000000
         // we have only prescaler 2 or must take clock of timer A (which is non deterministic)
 #error "Creating timer PWM with timer TCB0 is not possible for F_CPU > 16 MHz"
@@ -1050,7 +1065,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 
     const uint16_t tPWMWrapValue = (F_CPU / 1000) / (aFrequencyKHz);    // 526,31 for 38 kHz @20 MHz clock
@@ -1080,6 +1095,67 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
  **********************************************************************************************************************/
 
 /**********************************************
+ * Uno R4 boards
+ **********************************************/
+#elif defined(ARDUINO_ARCH_RENESAS)
+#include "FspTimer.h"
+FspTimer s50usTimer;
+
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
+#  if defined(ISR)
+#undef ISR
+#  endif
+
+// callback method used by timer
+void IRTimerInterruptHandlerHelper(timer_callback_args_t __attribute((unused)) *p_args) {
+    IRReceiveTimerInterruptHandler();
+}
+void timerEnableReceiveInterrupt() {
+//    s50usTimer.enable_overflow_irq();
+    s50usTimer.start();
+}
+void timerDisableReceiveInterrupt() {
+//    s50usTimer.disable_overflow_irq();
+    s50usTimer.stop(); // May save power
+}
+
+void timerConfigForReceive() {
+    uint8_t tTimerType = GPT_TIMER;
+    int8_t tIndex = FspTimer::get_available_timer(tTimerType); // Get first unused channel. Here we need the address of tTimerType
+    if (tIndex < 0 || tTimerType != GPT_TIMER) {
+        // here we found no unused GPT channel
+        tIndex = FspTimer::get_available_timer(tTimerType, true); // true to force use of already used PWM channel. Sets "force_pwm_reserved" if timer found
+        if (tIndex < 0) {
+            // If we already get an tIndex < 0 we have an error, but do not know how to handle :-(
+            return;
+        }
+    }
+    s50usTimer.begin(TIMER_MODE_PERIODIC, tTimerType, tIndex, MICROS_IN_ONE_SECOND / MICROS_PER_TICK, 0.0,
+            IRTimerInterruptHandlerHelper);
+    s50usTimer.setup_overflow_irq();
+    s50usTimer.open(); // In turn calls R_GPT_Enable()
+    s50usTimer.stop(); // May save power
+}
+
+#  if defined(SEND_PWM_BY_TIMER)
+#error PWM generation by hardware not yet implemented for Arduino Uno R4
+// Not yet implemented
+void enableSendPWMByTimer() {
+}
+void disableSendPWMByTimer() {
+}
+
+/*
+ * timerConfigForSend() is used exclusively by IRsend::enableIROut()
+ */
+void timerConfigForSend(uint16_t aFrequencyKHz) {
+#    if defined(IR_SEND_PIN)
+#    else
+#    endif
+}
+#  endif
+
+/**********************************************
  * Teensy 3.0 / Teensy 3.1 / Teensy 3.2 boards
  **********************************************/
 #elif defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
@@ -1097,8 +1173,8 @@ void timerEnableReceiveInterrupt() {
 void timerDisableReceiveInterrupt() {
     NVIC_DISABLE_IRQ(IRQ_CMT);
 }
-#define TIMER_INTR_NAME     cmt_isr
 
+#define TIMER_INTR_NAME     cmt_isr
 #  if defined(ISR)
 #undef ISR
 #  endif
@@ -1140,7 +1216,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt(); // TODO really required here? Do we have a common resource for Teensy3.0, 3.1
 #    if defined(IR_SEND_PIN)
     pinMode(IR_SEND_PIN, OUTPUT);
@@ -1209,7 +1285,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 #    if defined(IR_SEND_PIN)
     pinMode(IR_SEND_PIN, OUTPUT);
@@ -1230,6 +1306,8 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
  * Teensy 4.0, 4.1, MicroMod boards
  ***************************************/
 #elif defined(__IMXRT1062__)
+// forward declare ISR function (will be implemented by IRReceive.hpp)
+void pwm1_3_isr();
 
 // defines for FlexPWM1 timer on Teensy 4
 #define TIMER_REQUIRES_RESET_INTR_PENDING
@@ -1250,7 +1328,6 @@ void timerDisableReceiveInterrupt() {
 #undef ISR
 #  endif
 #define ISR(f) void (f)(void)
-void pwm1_3_isr();
 
 void timerConfigForReceive() {
     uint32_t period = (float) F_BUS_ACTUAL * (float) (MICROS_PER_TICK) * 0.0000005f;
@@ -1291,7 +1368,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 #    if defined(IR_SEND_PIN)
     pinMode(IR_SEND_PIN, OUTPUT);
@@ -1322,23 +1399,24 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
 
+/**********************************************************
+ * ESP8266 boards
+ **********************************************************/
 #elif defined(ESP8266)
 #  if defined(SEND_PWM_BY_TIMER)
 #error "No support for hardware PWM generation for ESP8266"
 #  endif // defined(SEND_PWM_BY_TIMER)
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() IRAM_ATTR void IRTimerInterruptHandler()
-IRAM_ATTR void IRTimerInterruptHandler();
 
 void timerEnableReceiveInterrupt() {
-    timer1_attachInterrupt(&IRTimerInterruptHandler); // enables interrupt too
+    timer1_attachInterrupt(&IRReceiveTimerInterruptHandler); // enables interrupt too
 }
 void timerDisableReceiveInterrupt() {
-    timer1_detachInterrupt(); // disables interrupt too }
+    timer1_detachInterrupt(); // disables interrupt too
 }
 
 void timerConfigForReceive() {
@@ -1358,67 +1436,137 @@ void timerConfigForReceive() {
  * so it is recommended to always define SEND_PWM_BY_TIMER
  **********************************************************/
 #elif defined(ESP32)
+#  if !defined(ESP_ARDUINO_VERSION)
+#define ESP_ARDUINO_VERSION 0
+#  endif
+#  if !defined(ESP_ARDUINO_VERSION_VAL)
+#define ESP_ARDUINO_VERSION_VAL(major, minor, patch) 202
+#  endif
+
 // Variables specific to the ESP32.
 // the ledc functions behave like hardware timers for us :-), so we do not require our own soft PWM generation code.
-hw_timer_t *s50usTimer; // set by timerConfigForReceive()
+hw_timer_t *s50usTimer = NULL; // set by timerConfigForReceive()
 
-
-#  if !defined(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL)
-#define SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL 0 // The channel used for PWM 0 to 7 are high speed PWM channels
+#  if !defined(SEND_LEDC_CHANNEL)
+#define SEND_LEDC_CHANNEL 0 // The channel used for PWM 0 to 7 are high speed PWM channels
 #  endif
 
 void timerEnableReceiveInterrupt() {
-    timerAlarmEnable (s50usTimer);
+#  if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+    timerStart(s50usTimer);
+#  else
+    timerAlarmEnable(s50usTimer);
+#  endif
 }
-#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(2, 0, 2)
+
+#  if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(2, 0, 2)
+/*
+ * Special support for ESP core < 202
+ */
 void timerDisableReceiveInterrupt() {
     if (s50usTimer != NULL) {
-        timerEnd(s50usTimer);
         timerDetachInterrupt(s50usTimer);
+        timerEnd(s50usTimer);
     }
 }
-#else
+#  else
+
 void timerDisableReceiveInterrupt() {
     if (s50usTimer != NULL) {
-        timerAlarmDisable (s50usTimer);
+#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+        timerStop(s50usTimer);
+#    else
+        timerAlarmDisable(s50usTimer);
+#    endif
     }
 }
-#endif
-// Redefinition of ISR macro which creates a plain function now
+#  endif
+
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() IRAM_ATTR void IRTimerInterruptHandler()
-IRAM_ATTR void IRTimerInterruptHandler();
 
+#  if !defined(DISABLE_CODE_FOR_RECEIVER) // Otherwise the &IRReceiveTimerInterruptHandler is referenced, but not available
 void timerConfigForReceive() {
     // ESP32 has a proper API to setup timers, no weird chip macros needed
     // simply call the readable API versions :)
     // 3 timers, choose #1, 80 divider for microsecond precision @80MHz clock, count_up = true
-    s50usTimer = timerBegin(1, 80, true);
-    timerAttachInterrupt(s50usTimer, &IRTimerInterruptHandler, false); // false -> level interrupt, true -> edge interrupt, but this is not supported :-(
+    if(s50usTimer == NULL) {
+#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+        s50usTimer = timerBegin(1000000);   // Only 1 parameter is required. 1000000 corresponds to 1 MHz / 1 uSec. After successful setup the timer will automatically start.
+        timerStop(s50usTimer); // Stop it here, to avoid "error E (3447) gptimer: gptimer_start(348): timer is not enabled yet" at timerEnableReceiveInterrupt()
+        timerAttachInterrupt(s50usTimer, &IRReceiveTimerInterruptHandler);
+        timerAlarm(s50usTimer, MICROS_PER_TICK, true, 0);   // 0 in the last parameter is repeat forever
+#    else
+        s50usTimer = timerBegin(1, 80, true);
+        timerAttachInterrupt(s50usTimer, &IRReceiveTimerInterruptHandler, false); // false -> level interrupt, true -> edge interrupt, but this is not supported :-(
+        timerAlarmWrite(s50usTimer, MICROS_PER_TICK, true);
+#    endif
+    }
     // every 50 us, autoreload = true
-    timerAlarmWrite(s50usTimer, MICROS_PER_TICK, true);
 }
+#  endif
+
+
+uint8_t sLastSendPin = 0; // Avoid multiple attach() or if pin changes, detach before attach
 
 #  if defined(SEND_PWM_BY_TIMER)
 void enableSendPWMByTimer() {
-    ledcWrite(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); //  * 256 since we have 8 bit resolution
+#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+#      if defined(IR_SEND_PIN)
+    ledcWrite(IR_SEND_PIN, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); // 3.x API
+#      else
+    ledcWrite(IrSender.sendPin, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); // 3.x API
+#      endif
+#    else
+    // ESP version < 3.0
+    ledcWrite(SEND_LEDC_CHANNEL, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); //  * 256 since we have 8 bit resolution
+#    endif
 }
 void disableSendPWMByTimer() {
-    ledcWrite(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, 0);
+#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+#      if defined(IR_SEND_PIN)
+    ledcWrite(IR_SEND_PIN, 0); // 3.x API
+#      else
+    ledcWrite(IrSender.sendPin, 0); // 3.x API
+#      endif
+#    else
+    // ESP version < 3.0
+    ledcWrite(SEND_LEDC_CHANNEL, 0);
+#    endif
 }
 
 /*
- * timerConfigForSend() is used exclusively by IRsend::enableIROut()
- * ledcWrite since ESP 2.0.2 does not work if pin mode is set. Disable receive interrupt if it uses the same resource
+ * timerConfigForSend() is used exclusively by IRsend::enableIROut() (or enableHighFrequencyIROut())
+ * ledcWrite since ESP 2.0.2 does not work if pin mode is set.
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
-    ledcSetup(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, aFrequencyKHz * 1000, 8);  // 8 bit PWM resolution
-#    if defined(IR_SEND_PIN)
-    ledcAttachPin(IR_SEND_PIN, SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL);  // bind pin to channel
+void timerConfigForSend(uint16_t aFrequencyKHz) {
+#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+#      if defined(IR_SEND_PIN)
+    if(sLastSendPin == 0){
+        ledcAttach(IR_SEND_PIN, aFrequencyKHz * 1000, 8); // 3.x API
+        sLastSendPin = IR_SEND_PIN;
+    }
+#      else
+    if(sLastSendPin != 0 && sLastSendPin != IrSender.sendPin){
+        ledcDetach(IrSender.sendPin); // detach pin before new attaching see #1194
+    }
+    ledcAttach(IrSender.sendPin, aFrequencyKHz * 1000, 8); // 3.x API
+    sLastSendPin = IrSender.sendPin;
+#      endif
 #    else
-    ledcAttachPin(IrSender.sendPin, SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL);  // bind pin to channel
+    // ESP version < 3.0
+    ledcSetup(SEND_LEDC_CHANNEL, aFrequencyKHz * 1000, 8);  // 8 bit PWM resolution
+#      if defined(IR_SEND_PIN)
+    ledcAttachPin(IR_SEND_PIN, SEND_LEDC_CHANNEL);  // attach pin to channel
+#      else
+    if(sLastSendPin != 0 && sLastSendPin != IrSender.sendPin){
+        ledcDetachPin(IrSender.sendPin);  // detach pin before new attaching see #1194
+    }
+    ledcAttachPin(IrSender.sendPin, SEND_LEDC_CHANNEL);  // attach pin to channel
+    sLastSendPin = IrSender.sendPin;
+#      endif
 #    endif
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -1450,14 +1598,11 @@ void timerDisableReceiveInterrupt() {
     NVIC_DisableIRQ (IR_SAMD_TIMER_IRQ); // or TC5->INTENCLR.bit.MC0 = 1; or TC5->COUNT16.CTRLA.reg &= ~TC_CTRLA_ENABLE;
 
 }
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we call the plain function IRReceiveTimerInterruptHandler()
 // The ISR is now TC3_Handler() or TC5_Handler() below
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR(f) void IRTimerInterruptHandler(void)
-// ATSAMD Timer IRQ functions
-void IRTimerInterruptHandler();
 
 /**
  * Adafruit M4 code (cores/arduino/startup.c) configures these clock generators:
@@ -1505,7 +1650,7 @@ void timerConfigForReceive() {
         ; // wait for sync to ensure that we can write again to COUNT16.CTRLA.reg
     // Reset TCx
     TC->CTRLA.reg = TC_CTRLA_SWRST;
-    // When writing a ‘1’ to the CTRLA.SWRST bit it will immediately read as ‘1’.
+    // When writing a 1 to the CTRLA.SWRST bit it will immediately read as 1.
     while (TC->CTRLA.bit.SWRST)
         ; // CTRL.SWRST will be cleared by hardware when the peripheral has been reset.
 
@@ -1536,7 +1681,7 @@ void TC5_Handler(void) {
     if (TC->INTFLAG.bit.MC0 == 1) {
         // reset bit for next turn
         TC->INTFLAG.bit.MC0 = 1;
-        IRTimerInterruptHandler();
+        IRReceiveTimerInterruptHandler();
     }
 }
 #    else
@@ -1546,7 +1691,7 @@ void TC3_Handler(void) {
     if (TC->INTFLAG.bit.MC0 == 1) {
         // reset bit for next turn
         TC->INTFLAG.bit.MC0 = 1;
-        IRTimerInterruptHandler();
+        IRReceiveTimerInterruptHandler();
     }
 }
 #    endif // defined(__SAMD51__)
@@ -1559,22 +1704,20 @@ void TC3_Handler(void) {
 #include "mbed.h"
 mbed::Ticker s50usTimer;
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() void IRTimerInterruptHandler(void)
-void IRTimerInterruptHandler();
 
 void timerEnableReceiveInterrupt() {
-    s50usTimer.attach(IRTimerInterruptHandler, std::chrono::microseconds(MICROS_PER_TICK));
+    s50usTimer.attach(IRReceiveTimerInterruptHandler, std::chrono::microseconds(MICROS_PER_TICK));
 }
 void timerDisableReceiveInterrupt() {
     s50usTimer.detach();
 }
 
 void timerConfigForReceive() {
-    s50usTimer.attach(IRTimerInterruptHandler, std::chrono::microseconds(MICROS_PER_TICK));
+    s50usTimer.attach(IRReceiveTimerInterruptHandler, std::chrono::microseconds(MICROS_PER_TICK));
 }
 
 #  if defined(SEND_PWM_BY_TIMER)
@@ -1601,7 +1744,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     sPwmOutForSendPWM.period_us(1000 / aFrequencyKHz);  // 26.315 for 38 kHz
     sIROutPuseWidth = (1000 * IR_SEND_DUTY_CYCLE_PERCENT) / (aFrequencyKHz * 100);
 }
@@ -1618,15 +1761,14 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
 
 repeating_timer_t s50usTimer;
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() void IRTimerInterruptHandler(void)
-void IRTimerInterruptHandler();
+
 // The timer callback has a parameter and a return value
 bool IRTimerInterruptHandlerHelper(repeating_timer_t*) {
-    IRTimerInterruptHandler();
+    IRReceiveTimerInterruptHandler();
     return true;
 }
 
@@ -1663,7 +1805,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
 #    if defined(IR_SEND_PIN)
     gpio_set_function(IR_SEND_PIN, GPIO_FUNC_PWM);
     // Find out which PWM slice is connected to IR_SEND_PIN
@@ -1689,7 +1831,7 @@ void timerConfigForSend(uint8_t aFrequencyKHz) {
 /***************************************
  * NRF5 boards like the BBC:Micro
  ***************************************/
-#elif defined(NRF5) || defined(ARDUINO_ARCH_NRF52840)
+#elif defined(NRF5) || defined(ARDUINO_ARCH_NRF52840) || defined(ARDUINO_ARCH_NRF52)
 #  if defined(SEND_PWM_BY_TIMER)
 #error PWM generation by hardware not implemented for NRF5
 #  endif
@@ -1700,11 +1842,11 @@ void timerEnableReceiveInterrupt() {
 void timerDisableReceiveInterrupt() {
     NVIC_DisableIRQ (TIMER2_IRQn);
 }
+
+// Undefine ISR, because we call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR(f) void IRTimerInterruptHandler(void)
-void IRTimerInterruptHandler();
 
 void timerConfigForReceive() {
     NRF_TIMER2->MODE = TIMER_MODE_MODE_Timer;              // Set the timer in Timer Mode
@@ -1730,7 +1872,7 @@ void TIMER2_IRQHandler(void) {
     // Interrupt Service Routine - Fires every 50uS
     if ((NRF_TIMER2->EVENTS_COMPARE[0] != 0) && ((NRF_TIMER2->INTENSET & TIMER_INTENSET_COMPARE0_Msk) != 0)) {
         NRF_TIMER2->EVENTS_COMPARE[0] = 0;          //Clear compare register 0 event
-        IRTimerInterruptHandler();          // call the IR-receive function
+        IRReceiveTimerInterruptHandler();          // call the IR-receive function
         NRF_TIMER2->CC[0] += 50;
     }
 }
@@ -1763,18 +1905,16 @@ void timerDisableReceiveInterrupt() {
     s50usTimer.pause();
 }
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() void IRTimerInterruptHandler(void)
-void IRTimerInterruptHandler();
 
 void timerConfigForReceive() {
     s50usTimer.setMode(TIMER_CH1, TIMER_OUTPUT_COMPARE);
     s50usTimer.setPrescaleFactor(1);
     s50usTimer.setOverflow((F_CPU / MICROS_IN_ONE_SECOND) * MICROS_PER_TICK);
-    s50usTimer.attachInterrupt(TIMER_CH1, IRTimerInterruptHandler);
+    s50usTimer.attachInterrupt(TIMER_CH1, IRReceiveTimerInterruptHandler);
     s50usTimer.refresh();
 }
 
@@ -1807,16 +1947,14 @@ void timerDisableReceiveInterrupt() {
     s50usTimer.pause();
 }
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() void IRTimerInterruptHandler(void)
-void IRTimerInterruptHandler();
 
 void timerConfigForReceive() {
     s50usTimer.setOverflow(MICROS_PER_TICK, MICROSEC_FORMAT); // 50 uS
-    s50usTimer.attachInterrupt(IRTimerInterruptHandler);
+    s50usTimer.attachInterrupt(IRReceiveTimerInterruptHandler);
     s50usTimer.resume();
 }
 
@@ -1833,17 +1971,16 @@ extern IntervalTimer timer;
 extern int ir_out_kHz;
 
 void timerEnableReceiveInterrupt() {
-    timer.begin(IRTimerInterruptHandler, MICROS_PER_TICK, uSec);
+    timer.begin(IRReceiveTimerInterruptHandler, MICROS_PER_TICK, uSec);
 }
 void timerDisableReceiveInterrupt() {
     timer.end();
 }
 
-// Redefinition of ISR macro which creates a plain function now
+// Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
-#define ISR() void IRTimerInterruptHandler(void)
 
 void timerConfigForReceive() {
 }
@@ -1870,7 +2007,7 @@ void disableSendPWMByTimer() {
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 #    if defined(IR_SEND_PIN)
     pinMode(IR_SEND_PIN, OUTPUT);
@@ -1907,7 +2044,7 @@ void enableSendPWMByTimer() {
 void disableSendPWMByTimer() {
 }
 
-void timerConfigForSend(uint8_t aFrequencyKHz) {
+void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 #    if defined(IR_SEND_PIN)
     pinMode(IR_SEND_PIN, OUTPUT);

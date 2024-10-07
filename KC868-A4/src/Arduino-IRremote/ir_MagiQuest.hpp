@@ -14,7 +14,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2017-2022 E. Stuart Hicks <ehicks@binarymagi.com>, Armin Joachimsmeyer
+ * Copyright (c) 2017-2024 E. Stuart Hicks <ehicks@binarymagi.com>, Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -46,8 +46,12 @@
 //
 //==============================================================================
 //
-//                            M A G I Q U E S T
-//
+//       M   M   AA    GGG   III   QQQ    U   U  EEEE   SSS  TTTTTT
+//       MM MM  A  A  G       I   Q   Q   U   U  E     S       TT
+//       M M M  AAAA  G  GG   I   Q   Q   U   U  EEE    SSS    TT
+//       M   M  A  A  G   G   I   Q  QQ   U   U  E         S   TT
+//       M   M  A  A   GGG   III   QQQQ    UUU   EEEE  SSSS    TT
+//                                     Q
 //==============================================================================
 /*
  * https://github.com/kitlaan/Arduino-IRremote/blob/master/ir_Magiquest.cpp
@@ -75,6 +79,8 @@
  // Checksum (+ sum of the 5 bytes before == 0)
  + 250,- 900 + 300,- 900 + 250,- 850 + 550,- 600
  + 600,- 550 + 300,- 900 + 250,- 850 + 550
+
+ // No stop bit!
  */
 // MSB first, 8 start bits (zero), 31 wand id bits, 9 magnitude bits 8 checksum bits and no stop bit => 56 bits
 #define MAGIQUEST_CHECKSUM_BITS     8   // magiquest_t.cmd.checksum
@@ -104,7 +110,7 @@
 
 // assume 110 as repeat period
 struct PulseDistanceWidthProtocolConstants MagiQuestProtocolConstants = { MAGIQUEST, 38, MAGIQUEST_ZERO_MARK, MAGIQUEST_ZERO_SPACE,
-MAGIQUEST_ONE_MARK, MAGIQUEST_ONE_SPACE, MAGIQUEST_ZERO_MARK, MAGIQUEST_ZERO_SPACE, PROTOCOL_IS_MSB_FIRST, SEND_NO_STOP_BIT, 110,
+MAGIQUEST_ONE_MARK, MAGIQUEST_ONE_SPACE, MAGIQUEST_ZERO_MARK, MAGIQUEST_ZERO_SPACE, PROTOCOL_IS_MSB_FIRST | SUPPRESS_STOP_BIT, 110,
         NULL };
 //+=============================================================================
 //
@@ -135,9 +141,6 @@ void IRsend::sendMagiQuest(uint32_t aWandId, uint16_t aMagnitude) {
     Serial.print(F("MagiQuest checksum=0x"));
     Serial.println(tChecksum, HEX);
 #endif
-#if !defined(DISABLE_CODE_FOR_RECEIVER)
-    IrReceiver.restartAfterSend();
-#endif
 }
 
 //+=============================================================================
@@ -151,10 +154,10 @@ void IRsend::sendMagiQuest(uint32_t aWandId, uint16_t aMagnitude) {
 bool IRrecv::decodeMagiQuest() {
 
     // Check we have the right amount of data, magnitude and ID bits and 8 start bits + 0 stop bit
-    if (decodedIRData.rawDataPtr->rawlen != (2 * MAGIQUEST_BITS)) {
+    if (decodedIRData.rawlen != (2 * MAGIQUEST_BITS)) {
         IR_DEBUG_PRINT(F("MagiQuest: "));
         IR_DEBUG_PRINT(F("Data length="));
-        IR_DEBUG_PRINT(decodedIRData.rawDataPtr->rawlen);
+        IR_DEBUG_PRINT(decodedIRData.rawlen);
         IR_DEBUG_PRINTLN(F(" is not 112"));
         return false;
     }
