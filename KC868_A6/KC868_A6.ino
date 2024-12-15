@@ -62,7 +62,9 @@ RXD (define by yourself) :13
 #define I2C_SCL 15
 
 #define RS485_RX 14
-#define RS485_TC 27
+#define RS485_TX 27
+
+#define WS2812_DATA_PIN 13
 
 
 // INCLUDES
@@ -73,36 +75,40 @@ RXD (define by yourself) :13
 // https://github.com/xreef/PCF8574_library
 #include "src/PCF8574/PCF8574.h"
 // OLED display. See https://github.com/lexus2k/lcdgfx
-#include <lcdgfx.h>
+//#include <lcdgfx.h>
+#include <U8g2lib.h>
+#include <Wire.h>
 #include <FastLED.h>
 
 
 // CONSTANTS
 // Analog inputs
-const byte analogInputPins[] = {36, 34, 35, 39};
+//const byte analogInputPins[] = {36, 34, 35, 39};
 // 433 MHz RF Rx/Tx pins
 //const byte rf433Pins[] = {2, 15};
 // S2 Button
 const byte s2buttonPin = 0;
 // RS485 Tx 13, Rx 16
-
-#define NUM_LEDS 8
-
-//#define WS2812_DATA_PIN 32
+constexpr byte numLeds = 8;
 
 // GLOBALS
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
+/*
 TwoWire Wire_1 = TwoWire(1);
 // Input buttons 
 Button2 inputButtons[4];
+*/
 // S2 Button
 Button2 s2button;
+/*
 // For inputs
 PCF8574 pcfIn(0x22, I2C_SDA, I2C_SCL);
 // For relay outputs
 PCF8574 pcfOut(0x24, I2C_SDA, I2C_SCL);
 DisplaySSD1306_128x32_I2C display(-1, {1, 0x3C, I2C_SCL, I2C_SDA, 400000});
-
-CRGB leds[NUM_LEDS];
+*/
+CRGB leds[numLeds];
 
 
 // CALLBACKS
@@ -117,6 +123,16 @@ void onRelease(Button2& btn) {
 void setup() {
   Serial.begin(115200);
   Serial.println(F("Start Kincony KC868-A6 Test"));
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  u8g2.begin();
+
+   u8g2.clearBuffer();					// clear the internal memory
+  u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
+  u8g2.drawStr(0,10,"Hello World!");	// write something to the internal memory
+  u8g2.sendBuffer();					// transfer internal memory to the display 
+
 /*
   Wire_1.begin(I2C_SDA, I2C_SCL);  // custom i2c port on ESP
   Wire_1.setClock(400000); // standard 400kHz speed
@@ -125,11 +141,11 @@ void setup() {
   pinMode(33, OUTPUT);
 */
 
-  FastLED.addLeds<WS2812, 33, GRB>(leds, NUM_LEDS);
-  fill_rainbow(leds, NUM_LEDS, 0, 7);
+  FastLED.addLeds<WS2812, WS2812_DATA_PIN, GRB>(leds, numLeds);
+  for(int i=0; i<numLeds; i++){
+  leds[i] = CRGB::Red;
+  }
   FastLED.show();
-
-
 
  /* Select the font to use with menu and all font functions */
  /*
@@ -166,13 +182,20 @@ void setup() {
 }
 
 void loop() {
+   u8g2.clearBuffer();					// clear the internal memory
+  u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
+  u8g2.setCursor(0,20);
+  u8g2.print(millis());	// write something to the internal memory
+  u8g2.sendBuffer();					// transfer internal memory to the display 
 
- // digitalWrite(33, HIGH);
 
-  s2button.loop();
-    fill_rainbow(leds, NUM_LEDS, 0, 7);
+  // Turn the LED on, then pause
+  leds[0] = CRGB::Red;
   FastLED.show();
-  //delay(500);
-  //digitalWrite(33, LOW);
-  //delay(500);
+  delay(500);
+  // Now turn the LED off, then pause
+  leds[0] = CRGB::Black;
+  FastLED.show();
+  delay(500);
+  s2button.loop();
 }
