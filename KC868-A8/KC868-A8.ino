@@ -1,10 +1,10 @@
 /**
- * Kincony KC868-A8
+ * Kincony KC868-A6
  *
  * https://www.kincony.com/how-to-programming.html
  * See https://www.kincony.com/how-to-code-by-arduino-ide.html
- * https://www.kincony.com/arduino-esp32-8-channel-relay-module-kc868-a8.html
- * Set Target board as NodeMCU-32S
+ * https://www.kincony.com/esp32-6-channel-relay-module-kc868-a6.html
+ * Set Target board as NodeMCU-32S (or DOIT ESP32 DEVKIT V1)
  */
 
 #define SDA 4
