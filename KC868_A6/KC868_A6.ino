@@ -64,7 +64,7 @@ RXD (define by yourself) :13
 #define RS485_RX 14
 #define RS485_TX 27
 
-#define WS2812_DATA_PIN 13
+#define WS2812_DATA_PIN 32
 
 
 // INCLUDES
