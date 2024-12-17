@@ -64,20 +64,22 @@ RXD (define by yourself) :13
 #define RS485_RX 14
 #define RS485_TX 27
 
+// This is pin DHT1 after removal of resistor R23, and bridging over R24
 #define WS2812_DATA_PIN 32
 
 
 // INCLUDES
+// I2C
+#include <Wire.h>
 // See https://github.com/LennartHennigs/Button2
 #include "src/Button2/Button2.h";
 // See https://github.com/Arduino-IRremote/Arduino-IRremote
 #include "src/Arduino-IRremote/IRremote.hpp";
 // https://github.com/xreef/PCF8574_library
 #include "src/PCF8574/PCF8574.h"
-// OLED display. See https://github.com/lexus2k/lcdgfx
-//#include <lcdgfx.h>
+// OLED display. See https://github.com/olikraus/u8g2
 #include <U8g2lib.h>
-#include <Wire.h>
+// For WS2812 LED strip. See https://fastled.io/
 #include <FastLED.h>
 
 
@@ -101,13 +103,14 @@ Button2 inputButtons[4];
 */
 // S2 Button
 Button2 s2button;
-/*
+
+uint8_t ledHue = 0;
+
 // For inputs
 PCF8574 pcfIn(0x22, I2C_SDA, I2C_SCL);
 // For relay outputs
 PCF8574 pcfOut(0x24, I2C_SDA, I2C_SCL);
-DisplaySSD1306_128x32_I2C display(-1, {1, 0x3C, I2C_SCL, I2C_SDA, 400000});
-*/
+
 CRGB leds[numLeds];
 
 
@@ -115,6 +118,7 @@ CRGB leds[numLeds];
 void onPress(Button2& btn) {
   if(btn == s2button){
     Serial.println(F("S2 Button presed"));
+    ledHue +=32;
   }
 }
 void onRelease(Button2& btn) {
@@ -124,78 +128,78 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("Start Kincony KC868-A6 Test"));
 
+  Serial.print("Starting I2C interface...");
   Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000); // 400kHz speed
+  Serial.println("done.");
 
+  // OLED display
+  Serial.print("Starting OLED display...");
+  // Note that 7-bit I2C addresses (like 0x2F, 0x3C) need to be shifted left
+  u8g2.setI2CAddress(0x03c << 1);
   u8g2.begin();
-
-   u8g2.clearBuffer();					// clear the internal memory
+  u8g2.clearBuffer();					// clear the internal memory
   u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
-  u8g2.drawStr(0,10,"Hello World!");	// write something to the internal memory
-  u8g2.sendBuffer();					// transfer internal memory to the display 
+  u8g2.drawStr(0,10,"KC868-A6");	// write something to the internal memory
+  u8g2.sendBuffer();					// transfer internal memory to the display
+  Serial.println("done.");
 
-/*
-  Wire_1.begin(I2C_SDA, I2C_SCL);  // custom i2c port on ESP
-  Wire_1.setClock(400000); // standard 400kHz speed
-
-
-  pinMode(33, OUTPUT);
-*/
-
+  // WS2812 strip
+  Serial.print("Starting Programmable LED interface...");
   FastLED.addLeds<WS2812, WS2812_DATA_PIN, GRB>(leds, numLeds);
-  for(int i=0; i<numLeds; i++){
-  leds[i] = CRGB::Red;
-  }
+  fill_rainbow(leds, numLeds, 0, 10);
   FastLED.show();
+  Serial.println("done.");
 
- /* Select the font to use with menu and all font functions */
- /*
-    display.setFixedFont( ssd1306xled_font6x8 );
-    display.begin();
-    display.printFixed(0,  8, "Normal text", STYLE_NORMAL);
-
-  Serial.println(F("Configuring Inputs"));
+  // Digital Inputs
+  Serial.print(F("Configuring Inputs..."));
   s2button.begin(s2buttonPin);
   s2button.setPressedHandler(onPress);
-  if(pcfIn.begin()){Serial.println(F("Ok"));}
-  else {Serial.println(F("Error"));}
-  for(int i=0; i<8; i++){
-    pcfIn.pinMode(i, INPUT);
-    delay(250);
+  if(pcfIn.begin()){
+    for(int i=0; i<8; i++){
+      pcfIn.pinMode(i, INPUT);
+      delay(250);
+    }
+    Serial.println(F("done."));
+  }
+  else {
+    Serial.println(F("error initialising PCF8574 input!"));
   }
 
-
-  Serial.println(F("Testing Relays"));
+  // Outputs
+  Serial.print(F("initialising output relays"));
   for(int i=0; i<6; i++){
     pcfOut.pinMode(i, OUTPUT);
-  }  
-  if (pcfOut.begin()){Serial.println(F("Ok"));}
-  else {Serial.println(F("Error"));}
-  for(int i=0; i<6; i++){
-    pcfOut.digitalWrite(i, HIGH);
-    delay(250);
   }
-  for(int i=0; i<6; i++){
-    pcfOut.digitalWrite(i, LOW);
-    delay(250);
+  if (pcfOut.begin()){
+    for(int i=0; i<6; i++){
+        pcfOut.digitalWrite(i, LOW);
+        delay(250);
+      }
+    for(int i=0; i<6; i++){
+      pcfOut.digitalWrite(i, HIGH);
+      delay(250);
+    }
+    Serial.println("done.");
   }
-  */
+  else {
+    Serial.println(F("Error initialising PCF8574 output!"));
+  }
 }
 
 void loop() {
-   u8g2.clearBuffer();					// clear the internal memory
+  u8g2.clearBuffer();					// clear the internal memory
   u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
-  u8g2.setCursor(0,20);
+  u8g2.setCursor(0, 20);
   u8g2.print(millis());	// write something to the internal memory
   u8g2.sendBuffer();					// transfer internal memory to the display 
 
+  // Update LEDs
+  fadeToBlackBy(leds, numLeds, 30);
+  int pos = beatsin16( 30, 0, numLeds-1 );
+  leds[pos] += CHSV(ledHue, 255, 192);
+  FastLED.show();
 
-  // Turn the LED on, then pause
-  leds[0] = CRGB::Red;
-  FastLED.show();
-  delay(500);
-  // Now turn the LED off, then pause
-  leds[0] = CRGB::Black;
-  FastLED.show();
-  delay(500);
+  // Inputs
   s2button.loop();
 }
