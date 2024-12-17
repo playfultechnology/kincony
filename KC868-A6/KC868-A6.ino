@@ -82,43 +82,34 @@ RXD (define by yourself) :13
 // For WS2812 LED strip. See https://fastled.io/
 #include <FastLED.h>
 
-
 // CONSTANTS
 // Analog inputs
 //const byte analogInputPins[] = {36, 34, 35, 39};
 // 433 MHz RF Rx/Tx pins
 //const byte rf433Pins[] = {2, 15};
 // S2 Button
-const byte s2buttonPin = 0;
+constexpr byte s2buttonPin = 0;
 // RS485 Tx 13, Rx 16
 constexpr byte numLeds = 8;
 
 // GLOBALS
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-
-/*
-TwoWire Wire_1 = TwoWire(1);
-// Input buttons 
-Button2 inputButtons[4];
-*/
 // S2 Button
 Button2 s2button;
-
+// LED strip hue
 uint8_t ledHue = 0;
-
-// For inputs
+// I2C GPIO expander used for digital inputs
 PCF8574 pcfIn(0x22, I2C_SDA, I2C_SCL);
-// For relay outputs
+// I2c GPIO expander for relay outputs
 PCF8574 pcfOut(0x24, I2C_SDA, I2C_SCL);
-
+// RGB LED array
 CRGB leds[numLeds];
-
 
 // CALLBACKS
 void onPress(Button2& btn) {
   if(btn == s2button){
-    Serial.println(F("S2 Button presed"));
-    ledHue +=32;
+    Serial.println(F("S2 Button pressed"));
+    ledHue+=32;
   }
 }
 void onRelease(Button2& btn) {
