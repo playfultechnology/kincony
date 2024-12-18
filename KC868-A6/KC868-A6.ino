@@ -67,6 +67,7 @@ RXD (define by yourself) :13
 // This is pin DHT1 after removal of resistor R23, and bridging over R24
 #define WS2812_DATA_PIN 32
 
+#define SPI_CS 5
 
 // INCLUDES
 // I2C
@@ -81,6 +82,8 @@ RXD (define by yourself) :13
 #include <U8g2lib.h>
 // For WS2812 LED strip. See https://fastled.io/
 #include <FastLED.h>
+// For MFRC522 connected to SPI interface (intended for nRF24L01)
+#include <MFRC522.h>
 
 // CONSTANTS
 // Analog inputs
@@ -104,6 +107,9 @@ PCF8574 pcfIn(0x22, I2C_SDA, I2C_SCL);
 PCF8574 pcfOut(0x24, I2C_SDA, I2C_SCL);
 // RGB LED array
 CRGB leds[numLeds];
+// RFID
+MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
+
 
 // CALLBACKS
 void onPress(Button2& btn) {
@@ -176,9 +182,25 @@ void setup() {
   else {
     Serial.println(F("Error initialising PCF8574 output!"));
   }
+
+	SPI.begin(18, 19, 23, 5);			// Init SPI bus
+	mfrc522.PCD_Init();		// Init MFRC522
+	delay(4);				// Optional delay. Some board do need more time after init to be ready, see Readme
+	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
+
+
 }
 
 void loop() {
+
+	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
+	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+	  // Dump debug info about the card; PICC_HaltA() is automatically called
+	  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+	}
+
+
+
   u8g2.clearBuffer();					// clear the internal memory
   u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
   u8g2.setCursor(0, 20);
