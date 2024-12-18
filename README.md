@@ -18,4 +18,4 @@
 | I2C | ![No](https://img.shields.io/badge/no-black) | ![OLED](https://img.shields.io/badge/yes-brightgreen) ![x1](https://img.shields.io/badge/1x&nbsp;spare-brightgreen) | ![x1](https://img.shields.io/badge/1x-brightgreen) | ![x1](https://img.shields.io/badge/1x-brightgreen) |
 | SPI | ![No](https://img.shields.io/badge/no-black) | ![nRF24L01](https://img.shields.io/badge/nRF24L01-brightgreen) ![LoRa](https://img.shields.io/badge/LoRa-brightgreen)  |![No](https://img.shields.io/badge/no-black) |![No](https://img.shields.io/badge/no-black)|
 | Buzzer | ![Yes](https://img.shields.io/badge/yes-brightgreen)  | ![No](https://img.shields.io/badge/no-black) | ![No](https://img.shields.io/badge/no-black) | ![No](https://img.shields.io/badge/no-black) |
-| RTC | | DS1307  | | |
+| RTC | ![No](https://img.shields.io/badge/no-black) | ![DS1307](https://img.shields.io/badge/DS1307-brightgreen)  | ![No](https://img.shields.io/badge/no-black) | ![No](https://img.shields.io/badge/no-black) |
