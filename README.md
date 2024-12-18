@@ -1,7 +1,7 @@
 
 # Feature Comparison
 
-| Feature  | [A4](https://www.kincony.com/kc868-a4-hardware-design-details.html) | [A6](https://www.kincony.com/kc868-a6-hardware-design-details.html) | A8 | [A16](https://www.kincony.com/esp32-board-16-channel-relay-hardware.html) |
+| Feature  | [A4](https://www.kincony.com/kc868-a4-hardware-design-details.html) | [A6](https://www.kincony.com/kc868-a6-hardware-design-details.html) | [A8](https://www.kincony.com/arduino-esp32-8-channel-relay-module-kc868-a8.html) | [A16](https://www.kincony.com/esp32-board-16-channel-relay-hardware.html) |
 | -------  | -- | -- | -- | --- |
 | Best Price | [£21.80](https://www.aliexpress.com/item/1005002823617497.html)  | [£17.59](https://www.aliexpress.com/item/1005004246120574.html) | [£34.69](https://www.aliexpress.com/item/1005003336002666.html)   | [£20.09](https://www.aliexpress.com/item/1005007459041635.html)    |
 | Digital Inputs | ![4](https://img.shields.io/badge/4x-brightgreen) | ![6 optocoupled via PCF8574](https://img.shields.io/badge/6x-brightgreen) | ![8](https://img.shields.io/badge/8x-brightgreen) | ![16](https://img.shields.io/badge/16x-brightgreen) | 
