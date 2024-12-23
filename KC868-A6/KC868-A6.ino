@@ -32,6 +32,7 @@ CE: 22
 #include <FastLED.h>
 // For MFRC522 connected to SPI interface (intended for nRF24L01)
 #include <MFRC522.h>
+#include <TaskScheduler.h>
 
 // CONSTANTS
 constexpr byte SPI_CLK = 18, SPI_MISO = 19, SPI_MOSI = 23, SPI_CS = 5;
@@ -68,6 +69,25 @@ CRGB leds[numLeds];
 // RFID
 MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
 
+HardwareSerial RS485Serial(1);
+HardwareSerial RS232Serial(2);
+
+void rs485PollCallback();
+Task rs485PollTask(5000, TASK_FOREVER, &rs485PollCallback);
+Scheduler ts;
+
+void rs485PollCallback() {
+    Serial.print("Polling at: ");
+    Serial.println(millis());
+    if (rs485PollTask.getRunCounter() & 1 ) {
+      RS485Serial.write("X");
+    }
+    else {
+      RS485Serial.write("Y");
+    }
+}
+
+
 // CALLBACKS
 void onPress(Button2& btn) {
   if(btn == s2button){
@@ -83,6 +103,18 @@ void setup() {
   delay(1000);
   Serial.println(F("Kincony KC868-A6 Setup"));
 
+  Serial.print("Starting RS485 serial interface...");
+  RS485Serial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
+  Serial.print("Starting RS232 serial interface...");
+  RS232Serial.begin(9600, SERIAL_8N1, RS232_RX, RS232_TX);
+  
+  Serial.print("Starting scheduler...");
+  ts.init();
+  ts.addTask(rs485PollTask);
+  Serial.print("added pollTask...");
+  rs485PollTask.enable();
+  Serial.println("pollTask enabled");
+
   Serial.print("Starting I2C interface...");
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000); // 400kHz speed
@@ -94,8 +126,14 @@ void setup() {
   u8g2.setI2CAddress(0x03c << 1);
   u8g2.begin();
   u8g2.clearBuffer();					// clear the internal memory
-  u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
-  u8g2.drawStr(0,10,"KC868-A6");	// write something to the internal memory
+  u8g2.setFont(u8g2_font_helvR08_tr);	// choose a suitable font
+  u8g2.drawStr(0, 10, "KC868-A6");	// write something to the internal memory
+
+  char formattedDate[9];
+  getFormattedDate(formattedDate);
+  u8g2.drawStr(80,10,formattedDate);	// write something to the internal memory
+
+
   u8g2.sendBuffer();					// transfer internal memory to the display
   Serial.println(F("done."));
 
@@ -130,7 +168,7 @@ void setup() {
   if (pcfOut.begin()){
     for(int i=0; i<numOutputs; i++){
         pcfOut.digitalWrite(i, LOW);
-        delay(1250);
+        delay(250);
       }
     for(int i=0; i<numOutputs; i++){
       pcfOut.digitalWrite(i, HIGH);
@@ -150,14 +188,27 @@ void setup() {
 }
 
 void loop() {
+  // Service task scheduler
+  ts.execute();
+
 	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
 	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
 	  // Dump debug info about the card; PICC_HaltA() is automatically called
 	  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
 	}
 
-  u8g2.clearBuffer();					// clear the internal memory
-  u8g2.setFont(u8g2_font_ncenB08_tr);	// choose a suitable font
+  if(RS485Serial.available()){
+    char c = RS485Serial.read();
+    Serial.write(c);
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(0, 32, 10, 10);
+    u8g2.setCursor(0, 40);
+    u8g2.setDrawColor(1);
+    u8g2.print(c);
+  }
+
+  //u8g2.clearBuffer();					// clear the internal memory
+  u8g2.setFont(u8g2_font_helvR08_tr);	// choose a suitable font
   u8g2.setCursor(0, 20);
   u8g2.print(millis());	// write something to the internal memory
   u8g2.sendBuffer();					// transfer internal memory to the display 
@@ -174,3 +225,14 @@ void loop() {
     pcfIn.digitalRead(i);
   }
 }
+
+// Helper function to format __DATE__
+void getFormattedDate(char *buff) {
+  char const *date = __DATE__;
+  int month, day, year;
+  static const char month_names[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  sscanf(date, "%s %d %d", buff, &day, &year);
+  month = (strstr(month_names, buff)-month_names)/3+1;
+  sprintf(buff, "%d%02d%02d", year, month, day);
+}
+
