@@ -33,6 +33,8 @@ CE: 22
 // For MFRC522 connected to SPI interface (intended for nRF24L01)
 #include <MFRC522.h>
 #include <TaskScheduler.h>
+// Using the ESP32 built-in bluetooth, so no need for serial Bluetooth connection to, e.g. HC-05
+#include "BluetoothSerial.h"
 
 // CONSTANTS
 constexpr byte SPI_CLK = 18, SPI_MISO = 19, SPI_MOSI = 23, SPI_CS = 5;
@@ -71,11 +73,12 @@ MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
 
 HardwareSerial RS485Serial(1);
 HardwareSerial RS232Serial(2);
+BluetoothSerial BTSerial;
+
+Scheduler ts;
 
 void rs485PollCallback();
 Task rs485PollTask(5000, TASK_FOREVER, &rs485PollCallback);
-Scheduler ts;
-
 void rs485PollCallback() {
     Serial.print("Polling at: ");
     Serial.println(millis());
@@ -86,6 +89,20 @@ void rs485PollCallback() {
       RS485Serial.write("Y");
     }
 }
+
+void rs232PollCallback();
+Task rs232PollTask(5000, TASK_FOREVER, &rs232PollCallback);
+void rs232PollCallback() {
+    Serial.print("Sending RS232 at: ");
+    Serial.println(millis());
+    if (rs232PollTask.getRunCounter() & 1 ) {
+      RS232Serial.write("X");
+    }
+    else {
+      RS232Serial.write("Y");
+    }
+}
+
 
 
 // CALLBACKS
@@ -105,14 +122,25 @@ void setup() {
 
   Serial.print("Starting RS485 serial interface...");
   RS485Serial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
+  RS485Serial.write("X");
+
   Serial.print("Starting RS232 serial interface...");
   RS232Serial.begin(9600, SERIAL_8N1, RS232_RX, RS232_TX);
-  
+  RS232Serial.write("Y");
+
+  Serial.print("Starting Bluetooth serial interface...");
+  BTSerial.begin("KC868-A6");
+
   Serial.print("Starting scheduler...");
   ts.init();
   ts.addTask(rs485PollTask);
-  Serial.print("added pollTask...");
+  Serial.print("added RS485 pollTask...");
   rs485PollTask.enable();
+  Serial.println("pollTask enabled");
+
+  ts.addTask(rs232PollTask);
+  Serial.print("added RS232 pollTask...");
+  rs232PollTask.enable();
   Serial.println("pollTask enabled");
 
   Serial.print("Starting I2C interface...");
@@ -132,6 +160,10 @@ void setup() {
   char formattedDate[9];
   getFormattedDate(formattedDate);
   u8g2.drawStr(80,10,formattedDate);	// write something to the internal memory
+
+  u8g2.drawStr(0,30,"RS232:");
+  u8g2.drawStr(0,40,"RS485:");
+  u8g2.drawStr(0,50,"BT:");
 
 
   u8g2.sendBuffer();					// transfer internal memory to the display
@@ -198,14 +230,58 @@ void loop() {
 	}
 
   if(RS485Serial.available()){
+    Serial.print("RS485 Data Received!");
     char c = RS485Serial.read();
     Serial.write(c);
     u8g2.setDrawColor(0);
-    u8g2.drawBox(0, 32, 10, 10);
-    u8g2.setCursor(0, 40);
+    u8g2.drawBox(40, 32, 10, 10);
+    u8g2.setCursor(40, 40);
     u8g2.setDrawColor(1);
     u8g2.print(c);
   }
+
+  if(RS232Serial.available()){
+    Serial.print("RS232 Data Received!");
+    char c = RS232Serial.read();
+    Serial.write(c);
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(40, 22, 10, 10);
+    u8g2.setCursor(40, 30);
+    u8g2.setDrawColor(1);
+    u8g2.print(c);
+  }
+
+  if(BTSerial.available()){
+    Serial.print("Bluetooth Data Received!");
+    char c = BTSerial.read();
+    Serial.write(c);
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(40, 42, 10, 10);
+    u8g2.setCursor(40, 50);
+    u8g2.setDrawColor(1);
+    u8g2.print(c);
+    switch(c){
+      case '1':
+      pcfOut.digitalWrite(0, !pcfOut.digitalRead(0));
+      break;
+      case '2':
+      pcfOut.digitalWrite(1, !pcfOut.digitalRead(1));
+      break;
+      case '3':
+      pcfOut.digitalWrite(2, !pcfOut.digitalRead(2));
+      break;
+      case '4':
+      pcfOut.digitalWrite(3, !pcfOut.digitalRead(3));
+      break;
+      case '5':
+      pcfOut.digitalWrite(4, !pcfOut.digitalRead(4));
+      break;
+      case '6':
+      pcfOut.digitalWrite(5, !pcfOut.digitalRead(5));
+      break;
+    }
+  }
+
 
   //u8g2.clearBuffer();					// clear the internal memory
   u8g2.setFont(u8g2_font_helvR08_tr);	// choose a suitable font
