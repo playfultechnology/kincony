@@ -26,6 +26,8 @@ CE: 22
 #include "src/Arduino-IRremote/IRremote.hpp";
 // https://github.com/xreef/PCF8574_library
 #include "src/PCF8574/PCF8574.h"
+// See https://github.com/SnijderC/dyplayer
+#include "src/DYPlayer/DYPlayerArduino.h";
 // OLED display. See https://github.com/olikraus/u8g2
 #include <U8g2lib.h>
 // For WS2812 LED strip. See https://fastled.io/
