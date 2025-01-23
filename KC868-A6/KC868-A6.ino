@@ -52,6 +52,9 @@ constexpr byte analogInputPins[] = {36, 39, 34, 35};
 // S2 Button
 constexpr byte s2buttonPin = 0;
 
+// NOTE ESP32 defines DAC1 25, DAC2 26, but Kincony has them labelled the other way around...
+//constexpr byte DAC1 = 26, DAC2 = 25;
+
 constexpr byte numLeds = 8;
 constexpr uint8_t numInputs = 6;
 constexpr uint8_t numOutputs = 6;
@@ -72,6 +75,8 @@ PCF8574 pcfOut(PCF8574_OUT_ADDRESS, I2C_SDA, I2C_SCL);
 CRGB leds[numLeds];
 // RFID
 MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
+
+char cmdBuffer[128];
 
 HardwareSerial RS485Serial(1);
 HardwareSerial RS232Serial(2);
@@ -121,6 +126,15 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println(F("Kincony KC868-A6 Setup"));
+
+
+  pinMode(DAC2, OUTPUT);
+
+  Serial.println(F("Testing DAC Outputs"));
+  dacWrite(DAC1, 255);
+  delay(1000);
+  dacWrite(DAC1, 0);
+
 
   Serial.print("Starting RS485 serial interface...");
   RS485Serial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
@@ -221,7 +235,15 @@ void setup() {
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 }
 
+byte PCF8574InputStateHandler(byte channel) {
+  return pcfIn.digitalRead(channel);
+}
+
 void loop() {
+
+  int val = beatsin8( 6, 0, 255 );
+  dacWrite(DAC1, val);
+
   // Service task scheduler
   ts.execute();
 
@@ -233,13 +255,21 @@ void loop() {
 
   if(RS485Serial.available()){
     Serial.print("RS485 Data Received!");
-    char c = RS485Serial.read();
-    Serial.write(c);
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(40, 32, 10, 10);
-    u8g2.setCursor(40, 40);
-    u8g2.setDrawColor(1);
-    u8g2.print(c);
+    uint8_t bufferIndex = 0;
+    memset(cmdBuffer, 0, sizeof cmdBuffer);
+    while(RS485Serial.available()){
+      char c = RS485Serial.read();
+      cmdBuffer[bufferIndex] = c;
+      bufferIndex++;
+      //Serial.write(c);
+      //u8g2.setDrawColor(0);
+      //u8g2.drawBox(40, 32, 10, 10);
+      //u8g2.setCursor(40, 40);
+      //u8g2.setDrawColor(1);
+      //u8g2.print(c);
+    }
+    cmdBuffer[bufferIndex] = '\0';
+    Serial.println(cmdBuffer);
   }
 
   if(RS232Serial.available()){
