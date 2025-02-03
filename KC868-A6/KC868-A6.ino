@@ -6,17 +6,7 @@
  * https://www.kincony.com/esp32-6-channel-relay-module-kc868-a6.html
  * Set Target board as NodeMCU-32S (or DOIT ESP32 DEVKIT V1)
  */
-/*
-DAC1:26
-DAC2:25
-Input_IIC_address 0x22
-Relay_IIC_address 0x24
-LoRA sx1278:
-RST:21
-DIO0:2
-nRF24L01:
-CE: 22
-*/
+
 // INCLUDES
 #include <WiFi.h>
 // I2C
@@ -25,8 +15,8 @@ CE: 22
 #include "src/Button2/Button2.h";
 // See https://github.com/Arduino-IRremote/Arduino-IRremote
 #include "src/Arduino-IRremote/IRremote.hpp";
-// https://github.com/xreef/PCF8574_library
-#include "src/PCF8574/PCF8574.h"
+// https://github.com/RobTillaart/PCF8574
+#include <PCF8574.h>
 // See https://github.com/SnijderC/dyplayer
 #include "src/DYPlayer/DYPlayerArduino.h";
 // OLED display. See https://github.com/olikraus/u8g2
@@ -52,6 +42,10 @@ constexpr byte  WS2812_DATA_PIN = 32;
 constexpr byte analogInputPins[] = {36, 39, 34, 35};
 // S2 Button
 constexpr byte s2buttonPin = 0;
+/* Unused pins in this sketch, pins exposed near SPI connector
+LoRA sx1278 RST:21, DIO0:2
+nRF24L0: CE: 22
+*/
 
 // NOTE ESP32 defines DAC1 25, DAC2 26, but Kincony has them labelled the other way around...
 //constexpr byte DAC1 = 26, DAC2 = 25;
@@ -69,13 +63,14 @@ Button2 s2button;
 // LED strip hue
 uint8_t ledHue = 0;
 // I2C GPIO expander used for digital inputs
-PCF8574 pcfIn(PCF8574_IN_ADDRESS, I2C_SDA, I2C_SCL);
+PCF8574 pcfIn(PCF8574_IN_ADDRESS, &Wire);
 // I2c GPIO expander for relay outputs
-PCF8574 pcfOut(PCF8574_OUT_ADDRESS, I2C_SDA, I2C_SCL);
+PCF8574 pcfOut(PCF8574_OUT_ADDRESS, &Wire);
 // RGB LED array
 CRGB leds[numLeds];
 // RFID
 MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
+uint8_t digitalInputs;
 
 char cmdBuffer[128];
 
@@ -235,11 +230,6 @@ void setup() {
   Serial.print(F("Configuring Inputs..."));
   s2button.begin(s2buttonPin);
   s2button.setPressedHandler(onPress);
-  // Note need to set pinmodes before calling begin()
-  for(int i=0; i<numInputs; i++){
-    pcfIn.pinMode(i, INPUT);
-    delay(250);
-  }
   if(pcfIn.begin()){
     Serial.println(F("done."));
   }
@@ -249,16 +239,13 @@ void setup() {
 
   // Outputs
   Serial.print(F("Initialising Outputs..."));
-  for(int i=0; i<6; i++){
-    pcfOut.pinMode(i, OUTPUT);
-  }
   if (pcfOut.begin()){
     for(int i=0; i<numOutputs; i++){
-        pcfOut.digitalWrite(i, LOW);
+        pcfOut.write(i, LOW);
         delay(250);
-      }
+    }
     for(int i=0; i<numOutputs; i++){
-      pcfOut.digitalWrite(i, HIGH);
+      pcfOut.write(i, HIGH);
       delay(250);
     }
     Serial.println(F("done."));
@@ -267,15 +254,14 @@ void setup() {
     Serial.println(F("Error initialising PCF8574 output!"));
   }
 
+
+/*
   // SPI Interface
 	SPI.begin(18, 19, 23, 5); // Init SPI bus
 	mfrc522.PCD_Init();		// Init MFRC522
 	delay(10);				// Optional delay. Some board do need more time after init to be ready, see Readme
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-}
-
-byte PCF8574InputStateHandler(byte channel) {
-  return pcfIn.digitalRead(channel);
+*/
 }
 
 void loop() {
@@ -285,13 +271,13 @@ void loop() {
 
   // Service task scheduler
   ts.execute();
-
+/*
 	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
 	if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
 	  // Dump debug info about the card; PICC_HaltA() is automatically called
 	  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
 	}
-
+*/
   if(RS485Serial.available()){
     Serial.print("RS485 Data Received!");
     uint8_t bufferIndex = 0;
@@ -333,22 +319,22 @@ void loop() {
     u8g2.print(c);
     switch(c){
       case '1':
-      pcfOut.digitalWrite(0, !pcfOut.digitalRead(0));
+      pcfOut.toggle(0);
       break;
       case '2':
-      pcfOut.digitalWrite(1, !pcfOut.digitalRead(1));
+      pcfOut.toggle(1);
       break;
       case '3':
-      pcfOut.digitalWrite(2, !pcfOut.digitalRead(2));
+      pcfOut.toggle(2);
       break;
       case '4':
-      pcfOut.digitalWrite(3, !pcfOut.digitalRead(3));
+      pcfOut.toggle(3);
       break;
       case '5':
-      pcfOut.digitalWrite(4, !pcfOut.digitalRead(4));
+      pcfOut.toggle(4);
       break;
       case '6':
-      pcfOut.digitalWrite(5, !pcfOut.digitalRead(5));
+      pcfOut.toggle(5);
       break;
     }
   }
@@ -368,8 +354,12 @@ void loop() {
 
   // Inputs
   s2button.loop();
-  for(int i=0; i<numInputs; i++){
-    pcfIn.digitalRead(i);
+
+  uint8_t tempDigitalInputs = pcfIn.read8();
+  if(tempDigitalInputs != digitalInputs){
+    digitalInputs = tempDigitalInputs;
+    Serial.print("Inputs:");
+    Serial.println(digitalInputs, BIN);
   }
 }
 
