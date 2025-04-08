@@ -21,20 +21,34 @@ namespace DY
 #endif
 
 #ifdef HAS_SOFTWARE_SERIAL
-  Player::Player(SoftwareSerial *port)
-  {
-    this->port = (Stream *)port;
-    this->isSoftSerial = true;
-  }
+	#ifdef ESP32
+	  Player::Player(EspSoftwareSerial::UART *port)
+	  {
+		this->port = (Stream *)port;
+		this->isSoftSerial = true;
+	  }
+	#else
+	  Player::Player(SoftwareSerial *port)
+	  {
+		this->port = (Stream *)port;
+		this->isSoftSerial = true;
+	  }
+  #endif
 #endif
   void Player::begin()
   {
     if (isSoftSerial)
     {
 #ifdef HAS_SOFTWARE_SERIAL
+	#ifdef ESP32
+      ((EspSoftwareSerial::UART *)port)->begin(9600);
+      while (!((SoftwareSerial *)port))
+        ; // wait for port to be connected
+	#else
       ((SoftwareSerial *)port)->begin(9600);
       while (!((SoftwareSerial *)port))
         ; // wait for port to be connected
+	#endif
 #endif
     }
     else

@@ -8,13 +8,16 @@
  */
 
 // INCLUDES
+// ESP32 built-in WiFi library
 #include <WiFi.h>
 // I2C
 #include <Wire.h>
+// ESP32 built-in bluetooth, so no need for serial Bluetooth module, e.g. HC-05
+#include "BluetoothSerial.h"
+// For even MOAR serial connections. See https://github.com/plerup/espsoftwareserial/
+#include "SoftwareSerial.h"
 // See https://github.com/LennartHennigs/Button2
 #include "src/Button2/Button2.h";
-// See https://github.com/Arduino-IRremote/Arduino-IRremote
-#include "src/Arduino-IRremote/IRremote.hpp";
 // https://github.com/RobTillaart/PCF8574
 #include <PCF8574.h>
 // See https://github.com/SnijderC/dyplayer
@@ -26,18 +29,14 @@
 // For MFRC522 connected to SPI interface (intended for nRF24L01)
 #include <MFRC522.h>
 #include <TaskScheduler.h>
-// Using the ESP32 built-in bluetooth, so no need for serial Bluetooth connection to, e.g. HC-05
-#include "BluetoothSerial.h"
 
 // CONSTANTS
 constexpr byte SPI_CLK = 18, SPI_MISO = 19, SPI_MOSI = 23, SPI_CS = 5;
 constexpr byte RS485_TX = 27, RS485_RX = 14;
-constexpr byte I2C_SDA = 4, I2C_SCL = 15;
-// As exposed on 4-pin header near OLED
-constexpr byte SERIAL_TX = 12, SERIAL_RX = 13;
 constexpr byte RS232_TX = 17, RS232_RX = 16;
-// This is pin DHT1 after removal of resistor R23, and bridging over R24
-constexpr byte  WS2812_DATA_PIN = 32;
+constexpr byte I2C_SDA = 4, I2C_SCL = 15;
+constexpr byte SERIAL_TX = 13, SERIAL_RX = 12; // As exposed on 4-pin header near OLED
+constexpr byte  WS2812_DATA_PIN = 32; // This is pin DHT1 after removal of resistor R23, and bridging over R24
 // Analog inputs
 constexpr byte analogInputPins[] = {36, 39, 34, 35};
 // S2 Button
@@ -46,7 +45,6 @@ constexpr byte s2buttonPin = 0;
 LoRA sx1278 RST:21, DIO0:2
 nRF24L0: CE: 22
 */
-
 // NOTE ESP32 defines DAC1 25, DAC2 26, but Kincony has them labelled the other way around...
 //constexpr byte DAC1 = 26, DAC2 = 25;
 
@@ -57,29 +55,38 @@ constexpr byte PCF8574_IN_ADDRESS = 0x22;
 constexpr byte PCF8574_OUT_ADDRESS = 0x24;
 
 // GLOBALS
+// UARTs
+// Serial0 Hardware UART for USB connection/debugging, monitor etc.
+// Serial1 Hardware UART for RS485 port
+HardwareSerial RS485Serial(1);
+// Serial2 Hardware UART for RS232 port
+HardwareSerial RS232Serial(2);
+// Bluetooth serial for incoming
+BluetoothSerial BTSerial;
+// Software serial for MP3 audio module
+EspSoftwareSerial::UART softSerial;
+// OLED Display
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-// S2 Button
-Button2 s2button;
-// LED strip hue
-uint8_t ledHue = 0;
+// Global audio player object
+DY::Player player(&softSerial);
 // I2C GPIO expander used for digital inputs
 PCF8574 pcfIn(PCF8574_IN_ADDRESS, &Wire);
 // I2c GPIO expander for relay outputs
 PCF8574 pcfOut(PCF8574_OUT_ADDRESS, &Wire);
+// RFID
+//MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
+// Task scheduler
+Scheduler ts;
+// S2 Button
+Button2 s2button;
+// LED strip hue
+uint8_t ledHue = 0;
 // RGB LED array
 CRGB leds[numLeds];
-// RFID
-MFRC522 mfrc522(SPI_CS, -1);  // Create MFRC522 instance
-uint8_t digitalInputs;
+// Cache of digital inputs
+uint8_t digitalInputs; 
 
-char cmdBuffer[128];
-
-HardwareSerial RS485Serial(1);
-HardwareSerial RS232Serial(2);
-BluetoothSerial BTSerial;
-
-Scheduler ts;
-
+// TASKS / CALLBACKS
 void rs485PollCallback();
 Task rs485PollTask(5000, TASK_FOREVER, &rs485PollCallback);
 void rs485PollCallback() {
@@ -106,9 +113,6 @@ void rs232PollCallback() {
     }
 }
 
-
-
-// CALLBACKS
 void onPress(Button2& btn) {
   if(btn == s2button){
     Serial.println(F("S2 Button pressed"));
@@ -193,6 +197,18 @@ void setup() {
   rs232PollTask.enable();
   Serial.println("pollTask enabled");
 
+
+  // Audio
+  Serial.print("Starting audio serial interface...");
+  softSerial.begin(9600, EspSoftwareSerial::SWSERIAL_8N1, SERIAL_RX, SERIAL_TX, false, 64);
+  //audioSerial.begin(9600, SERIAL_8N1, SERIAL_RX, SERIAL_TX);
+  Serial.println(F("done."));
+  player.begin();
+  player.setCycleMode(DY::PlayMode::OneOff);
+  // Volume is a value from 0-30
+  player.setVolume(24);
+  player.playSpecified(3);
+
   Serial.print("Starting I2C interface...");
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000); // 400kHz speed
@@ -214,7 +230,6 @@ void setup() {
   u8g2.drawStr(0,30,"RS232:");
   u8g2.drawStr(0,40,"RS485:");
   u8g2.drawStr(0,50,"BT:");
-
 
   u8g2.sendBuffer();					// transfer internal memory to the display
   Serial.println(F("done."));
@@ -264,6 +279,30 @@ void setup() {
 */
 }
 
+void processInput(uint8_t c){
+  switch(c){
+    case '1':
+      pcfOut.toggle(0);
+      break;
+    case '2':
+      pcfOut.toggle(1);
+      break;
+    case '3':
+      pcfOut.toggle(2);
+      break;
+    case '4':
+      pcfOut.toggle(3);
+      break;
+    case '5':
+      pcfOut.toggle(4);
+      break;
+    case '6':
+      pcfOut.toggle(5);
+      break;
+  }
+}
+
+
 void loop() {
 
   int val = beatsin8( 6, 0, 255 );
@@ -278,67 +317,34 @@ void loop() {
 	  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
 	}
 */
+
+  if(Serial.available()){
+    Serial.print("RS485 Data Received!");
+    char c = Serial.read();
+    Serial.write(c);
+    processInput(c);
+  }
+
   if(RS485Serial.available()){
     Serial.print("RS485 Data Received!");
-    uint8_t bufferIndex = 0;
-    memset(cmdBuffer, 0, sizeof cmdBuffer);
-    while(RS485Serial.available()){
-      char c = RS485Serial.read();
-      cmdBuffer[bufferIndex] = c;
-      bufferIndex++;
-      //Serial.write(c);
-      //u8g2.setDrawColor(0);
-      //u8g2.drawBox(40, 32, 10, 10);
-      //u8g2.setCursor(40, 40);
-      //u8g2.setDrawColor(1);
-      //u8g2.print(c);
-    }
-    cmdBuffer[bufferIndex] = '\0';
-    Serial.println(cmdBuffer);
+    char c = RS485Serial.read();
+    Serial.print(c, HEX);
+    processInput(c);
   }
 
   if(RS232Serial.available()){
     Serial.print("RS232 Data Received!");
     char c = RS232Serial.read();
     Serial.write(c);
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(40, 22, 10, 10);
-    u8g2.setCursor(40, 30);
-    u8g2.setDrawColor(1);
-    u8g2.print(c);
+    processInput(c);
   }
 
   if(BTSerial.available()){
     Serial.print("Bluetooth Data Received!");
     char c = BTSerial.read();
     Serial.write(c);
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(40, 42, 10, 10);
-    u8g2.setCursor(40, 50);
-    u8g2.setDrawColor(1);
-    u8g2.print(c);
-    switch(c){
-      case '1':
-      pcfOut.toggle(0);
-      break;
-      case '2':
-      pcfOut.toggle(1);
-      break;
-      case '3':
-      pcfOut.toggle(2);
-      break;
-      case '4':
-      pcfOut.toggle(3);
-      break;
-      case '5':
-      pcfOut.toggle(4);
-      break;
-      case '6':
-      pcfOut.toggle(5);
-      break;
-    }
+    processInput(c);
   }
-
 
   //u8g2.clearBuffer();					// clear the internal memory
   u8g2.setFont(u8g2_font_helvR08_tr);	// choose a suitable font
@@ -372,4 +378,3 @@ void getFormattedDate(char *buff) {
   month = (strstr(month_names, buff)-month_names)/3+1;
   sprintf(buff, "%d%02d%02d", year, month, day);
 }
-
