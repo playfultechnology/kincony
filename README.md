@@ -1,4 +1,3 @@
-
 # Feature Comparison
 
 | Feature  | [A4](https://www.kincony.com/kc868-a4-hardware-design-details.html) | [A6](https://www.kincony.com/kc868-a6-hardware-design-details.html) | [A8](https://www.kincony.com/kc868-a8-hardware-design-details.html) | [A16](https://www.kincony.com/esp32-board-16-channel-relay-hardware.html) |
